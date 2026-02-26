@@ -33,7 +33,7 @@ import java.nio.ByteOrder
  * | 格式符  | 说明 | 参数/返回类型 |
  * |---------|------|---------------|
  * | `b`     | 单个布尔值，占 1 字节（`0x00` = false, `0x01` = true） | `Boolean` |
- * | `b[n]`  | 定长布尔位数组，`n` 个布尔值紧密编码为 ⌈n/8⌉ 字节的位数组，无前缀 | `BooleanArray` |
+ * | `b[n]`  | 定长布尔位数组，`n` 个布尔值紧密编码为 n/8 字节的位数组，无前缀 | `BooleanArray` |
  * | `B`     | 变长前缀布尔位数组，使用无符号 varint 编码布尔值数量，后跟位数组数据 | `BooleanArray` |
  * | `B[n]`  | 定长前缀布尔位数组，使用 `n` 字节无符号整数编码布尔值数量，后跟位数组数据 | `BooleanArray` |
  *
@@ -62,7 +62,6 @@ import java.nio.ByteOrder
  * | 格式符 | 说明 | 参数/返回类型 |
  * |--------|------|---------------|
  * | `g`    | 变长前缀浮点数（前缀标签：0=零值, 1=f16, 2=f32, 3=f64） | `Double` |
- * | `n`    | 等同于 `g` | `Double` |
  *
  * ### 变长整数类型
  *
@@ -78,7 +77,7 @@ import java.nio.ByteOrder
  * | `z`     | 零字节结尾字符串（C 风格 null-terminated） | `String` |
  * | `s[n]`  | 带 `n` 字节无符号整数长度前缀的字符串（默认 4 字节前缀） | `String` |
  * | `c[n]`  | 定长字符数组，固定 `n` 字节，不足补零，读取时去除尾部零字节（必须指定 `n`） | `String` |
- * | `p`     | 变长前缀字符串（使用无符号 varint 编码长度前缀） | `String` |
+ * | `S`     | 变长前缀字符串（使用无符号 varint 编码长度前缀） | `String` |
  *
  * ### 字节数组类型
  *
@@ -88,7 +87,7 @@ import java.nio.ByteOrder
  * | `A[n]`  | 带 `n` 字节无符号整数长度前缀的字节数组（默认 4 字节前缀） | `ByteArray` |
  * | `A`     | 带无符号 varint 长度前缀的字节数组 | `ByteArray` |
  *
- * ### 变长前缀浮点数编码策略（`g`/`n` 格式符）
+ * ### 变长前缀浮点数编码策略（`g` 格式符）
  *
  * 使用 1 字节前缀标签指示后续数据格式：
  * - `0x00`：值为零，无后续数据（共 1 字节）
@@ -121,7 +120,7 @@ import java.nio.ByteOrder
  * println(prediction.exact) // 4
  *
  * // 计算精确大小（含变长字段）
- * val size = BinPack.computeSize("<vp", 42L, "hello")
+ * val size = BinPack.computeSize("<vS", 42L, "hello")
  * ```
  */
 object BinPack {
@@ -230,8 +229,8 @@ object BinPack {
 
                 'v' -> out.writeVarintSigned((args[ai++] as Number).toLong())
                 'V' -> out.writeVarintUnsigned((args[ai++] as Number).toLong())
-                'g', 'n' -> out.writeVarFloat((args[ai++] as Number).toDouble())
-                'p' -> {
+                'g' -> out.writeVarFloat((args[ai++] as Number).toDouble())
+                'S' -> {
                     val s = args[ai++] as String
                     val bytes = s.toByteArray(Charsets.UTF_8)
                     out.writeVarintUnsigned(bytes.size.toLong())
@@ -345,8 +344,8 @@ object BinPack {
 
                 'v' -> results.add(inp.readVarintSigned())
                 'V' -> results.add(inp.readVarintUnsigned())
-                'g', 'n' -> results.add(inp.readVarFloat())
-                'p' -> {
+                'g' -> results.add(inp.readVarFloat())
+                'S' -> {
                     val len = inp.readVarintUnsigned().toInt()
                     val buf = ByteArray(len)
                     inp.read(buf)
@@ -363,7 +362,7 @@ object BinPack {
     /**
      * 仅根据格式字符串预测打包后的字节大小（不需要实际的值）。
      *
-     * 对于变长格式符（`v`、`V`、`g`、`n`、`p`、`z`、`B`（变长前缀）、`A`（变长前缀）等），
+     * 对于变长格式符（`v`、`V`、`g`、`S`、`z`、`B`（变长前缀）、`A`（变长前缀）等），
      * 无法确定精确大小，此时 [SizePrediction.exact] 为 `null`。
      *
      * @param fmt 格式字符串
@@ -453,9 +452,9 @@ object BinPack {
 
                 'v' -> total += varintSignedSize((args[ai++] as Number).toLong())
                 'V' -> total += varintUnsignedSize((args[ai++] as Number).toLong())
-                'g', 'n' -> total += varFloatSize((args[ai++] as Number).toDouble())
+                'g' -> total += varFloatSize((args[ai++] as Number).toDouble())
 
-                'p' -> {
+                'S' -> {
                     val bytes = (args[ai++] as String).toByteArray(Charsets.UTF_8)
                     total += varintUnsignedSize(bytes.size.toLong()) + bytes.size
                 }
@@ -547,7 +546,7 @@ object BinPack {
                 }
 
                 'z' -> ops.add(Op(c))
-                'v', 'V', 'g', 'n', 'p' -> ops.add(Op(c))
+                'v', 'V', 'g', 'S' -> ops.add(Op(c))
 
                 'i', 'I' -> {
                     val n = readDigits(fmt, i)
@@ -622,7 +621,7 @@ object BinPack {
         'c' -> op.size
         'a' -> op.size
         'A' -> null
-        'z', 'v', 'V', 'g', 'n', 'p' -> null
+        'z', 'v', 'V', 'g', 'S' -> null
         else -> null
     }
 
@@ -675,9 +674,7 @@ object BinPack {
             }
         }
         return result
-    }
-
-    // ─── 整数读写 ─────────────────────────────────────────────
+    }// ─── 整数读写 ─────────────────────────────────────────────
 
     /**
      * 将整数值以指定字节数和字节序写入输出流。
@@ -721,7 +718,7 @@ object BinPack {
         return v
     }
 
-    // ─── Float16 读写 ─────────────────────────────────────────
+// ─── Float16 读写 ─────────────────────────────────────────
 
     /**
      * 将 Double 值编码为 IEEE 754 半精度浮点数（float16）并写入输出流。
@@ -811,7 +808,7 @@ object BinPack {
         return if (sign) -result else result
     }
 
-    // ─── 变长整数（LEB128 风格）───────────────────────────────
+// ─── 变长整数（LEB128 风格）───────────────────────────────
 
     /**
      * 将无符号整数以 LEB128 编码写入输出流。
@@ -873,7 +870,7 @@ object BinPack {
      */
     private fun varintSignedSize(value: Long): Int = varintUnsignedSize((value shl 1) xor (value shr 63))
 
-    // ─── 变长前缀浮点数 ──────────────────────────────────────
+// ─── 变长前缀浮点数 ──────────────────────────────────────
 
     /**
      * 将浮点数以变长前缀编码写入输出流。
@@ -951,4 +948,3 @@ object BinPack {
         return 1 + 8
     }
 }
-
